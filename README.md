@@ -1,1 +1,1 @@
-BranchIntegração das funcionalidades em andamento
+Integração das funcionalidades em andamento
