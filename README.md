@@ -1,1 +1,1 @@
-Código estável, em produção
+Integração das funcionalidades em andamento
