@@ -4,7 +4,11 @@ require_once '../config/session.php';
 require_once '../config/database.php';
 
 $pdo = conectarBanco();
-$estanteSelecionada = $_GET['estante'] ?? 1;
+$estanteSelecionada = (int) ($_GET['estante'] ?? 1);
+
+if ($estanteSelecionada < 1 || $estanteSelecionada > 4) {
+    $estanteSelecionada = 1;
+}
 
 $sql = "
 SELECT
@@ -12,7 +16,12 @@ SELECT
     o.titulo,
     o.autor,
     o.plataforma,
-    o.link_url
+    o.link_url,
+    (
+        SELECT string_agg(x.estante_id::text, ',' ORDER BY x.estante_id)
+        FROM obras_estantes x
+        WHERE x.obra_id = o.id
+    ) AS estantes_ids
 FROM obras o
 INNER JOIN obras_estantes oe
     ON oe.obra_id = o.id
@@ -53,140 +62,129 @@ $stmt->execute([
 
 $obras = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+/* ---- Apenas apresentação: números do resumo a partir das contagens acima ---- */
+require_once __DIR__ . '/partials/layout.php';
+
+$estantes = estantesFixas();
+$estanteAtual = (int) $estanteSelecionada;
+if (!isset($estantes[$estanteAtual])) {
+    $estanteAtual = 1;
+}
+
+$contagem = array_fill_keys(array_keys($estantes), 0);
+foreach ($resumo as $indice => $linha) {
+    $contagem[$indice + 1] = (int) $linha['total'];
+}
+
+$lendo = $contagem[1];
+$lidas = $contagem[2];
+$favoritas = $contagem[4];
+$totalStmt = $pdo->prepare('SELECT COUNT(*) FROM obras WHERE usuario_id = :usuario_id');
+$totalStmt->execute(['usuario_id' => $_SESSION['usuario_id']]);
+$totalObras = (int) $totalStmt->fetchColumn();   // obras distintas (uma obra em 2 estantes conta 1)
+$percentualLidas = $totalObras > 0 ? (int) round(($lidas / $totalObras) * 100) : 0;
+
 ?>
+<?php
+topo('Perfil', 'perfil');
+?>
+<div class="coluna larga">
+  <?php exibirMensagem(pegarMensagem('mensagem_obra')); ?>
 
-<!DOCTYPE html>
-<html lang="pt-BR">
+  <section class="perfil-cab">
+    <div class="avatar" aria-hidden="true">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+    </div>
+    <div>
+      <h1><?= e($_SESSION['nome_exibicao'] ?? '') ?></h1>
+      <p class="mudo">@<?= e($_SESSION['nome_usuario'] ?? '') ?></p>
+    </div>
+    <img class="perfil-arte" src="/assets/img/deitada.png" width="200" height="116" alt="Ilustração de uma pessoa deitada de bruços, usando o celular.">
+  </section>
 
-<head>
-    <meta charset="UTF-8">
-    <title>Perfil</title>
-</head>
+  <section id="resumo" aria-label="Resumo da estante"
+           data-total="<?= $totalObras ?>" data-lendo="<?= $lendo ?>" data-lido="<?= $lidas ?>" data-fav="<?= $favoritas ?>">
+    <div class="stats">
+      <p class="stat"><span class="n" id="st-total"><?= $totalObras ?></span> obras na estante</p>
+      <p class="stat"><span class="n" id="st-lendo"><?= $lendo ?></span> lendo agora</p>
+      <p class="stat"><span class="n" id="st-lido"><?= $lidas ?></span> lidas</p>
+      <p class="stat"><span class="n" id="st-fav"><?= $favoritas ?></span> favoritas</p>
+    </div>
+    <div class="progresso">
+      <span>Já lidas: <strong id="st-pct"><?= $percentualLidas ?>%</strong> da estante</span>
+      <div class="barra" id="prog" role="progressbar" aria-label="Percentual de obras lidas" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $percentualLidas ?>">
+        <div id="prog-fill" style="width:<?= $percentualLidas ?>%"></div>
+      </div>
+    </div>
+  </section>
 
-<body>
+  <section aria-label="Estantes">
+    <nav class="abas abas-4" aria-label="Estantes de leitura">
+      <?php foreach ($estantes as $id => $nome) : ?>
+        <a href="/perfil.php?estante=<?= $id ?>"<?= $id === $estanteAtual ? ' class="ativa" aria-current="page"' : '' ?>><?= e($nome) ?> (<?= $contagem[$id] ?>)</a>
+      <?php endforeach; ?>
+    </nav>
+    <div class="painel">
+      <div class="grade">
+        <?php if (empty($obras)) : ?>
+          <p class="vazio mudo">Nenhuma obra nesta estante ainda. Que tal adicionar a primeira?</p>
+        <?php endif; ?>
+        <?php foreach ($obras as $obra) : ?>
+          <article class="obra">
+            <h2><?= e($obra['titulo']) ?></h2>
+            <p><span class="mudo">Autor:</span> <?= e($obra['autor']) ?></p>
+            <p><span class="mudo">Plataforma:</span> <?= e($obra['plataforma']) ?></p>
+            <div class="obra-acoes">
+              <?php if (!empty($obra['link_url'])) : ?>
+                <a class="abrir" href="<?= e($obra['link_url']) ?>" target="_blank" rel="noopener noreferrer">Acessar Obra <span aria-hidden="true">→</span><span class="so-leitor"> (abre em nova aba)</span></a>
+              <?php endif; ?>
+              <button type="button" class="link-btn" data-editar="<?= (int) $obra['id'] ?>" data-estantes="<?= e($obra['estantes_ids'] ?? (string) $estanteAtual) ?>" data-titulo="<?= e($obra['titulo']) ?>">Editar<span class="so-leitor"> <?= e($obra['titulo']) ?></span></button>
+              <button type="button" class="link-btn" data-remover="<?= (int) $obra['id'] ?>" data-titulo="<?= e($obra['titulo']) ?>">Remover<span class="so-leitor"> <?= e($obra['titulo']) ?></span></button>
+            </div>
+          </article>
+        <?php endforeach; ?>
+      </div>
+    </div>
+  </section>
 
-<h1>Perfil</h1>
+  <div class="centro"><a class="btn" href="/adicionar.php">Adicionar obras</a></div>
+</div>
 
-<p>
-    Bem-vinda,
-    <?= $_SESSION['nome_exibicao']; ?>
-</p>
+<!--
+  JANELA EDITAR (RF16/RF17)
+  Envia por POST para /actions/editar_estantes.php (a ser criado pela pessoa do back-end):
+  obra_id, estante_atual e estantes[] (ids 1 a 4 marcados).
+-->
+<dialog id="dlg-editar" class="dlg" aria-labelledby="dlg-editar-t">
+  <form method="post" action="/actions/editar_estantes.php">
+    <h2 id="dlg-editar-t">Editar</h2>
+    <input type="hidden" name="obra_id" id="ed-id" value="">
+    <input type="hidden" name="estante_atual" value="<?= $estanteAtual ?>">
+    <fieldset class="grupo">
+      <legend>Selecione as pastas que deseja fazer a mudança:</legend>
+      <?php foreach ($estantes as $id => $nome) : ?>
+        <label class="check"><input type="checkbox" name="estantes[]" value="<?= $id ?>" data-estante="<?= $id ?>"> <?= e($nome) ?></label>
+      <?php endforeach; ?>
+    </fieldset>
+    <p id="ed-erro" class="erro" role="alert" hidden>Marque pelo menos uma pasta.</p>
+    <div class="acoes"><button class="btn" type="submit">Salvar</button><button class="btn btn-borda" type="button" data-fechar>Cancelar</button></div>
+    <p class="pequeno"><a id="ed-dados" href="/editar_obra.php">Editar título, autor, plataforma ou link</a></p>
+  </form>
+</dialog>
 
-<p>
-    @<?= $_SESSION['nome_usuario']; ?>
-</p>
-
-<p>
-    <a href="/adicionar.php">
-        Adicionar Obra
-    </a>
-</p>
-
-<p>
-    <a href="/actions/logout.php">
-        Sair
-    </a>
-</p>
-
-<hr>
-
-<h2>Resumo de Leituras</h2>
-
-<table border="1" cellpadding="5">
-
-    <tr>
-        <th>Estante</th>
-        <th>Quantidade</th>
-    </tr>
-
-    <?php
-    $totalGeral = 0;
-
-    foreach ($resumo as $linha):
-
-        $totalGeral += $linha['total'];
-    ?>
-
-    <tr>
-        <td><?= htmlspecialchars($linha['nome']) ?></td>
-        <td><?= $linha['total'] ?></td>
-    </tr>
-
-    <?php endforeach; ?>
-
-    <tr>
-        <th>Total Geral</th>
-        <th><?= $totalGeral ?></th>
-    </tr>
-
-</table>
-
-<hr>
-
-<h2>Estantes</h2>
-
-<a href="?estante=1">Lendo</a>
-<a href="?estante=2">Lido</a>
-<a href="?estante=3">Quero Ler</a>
-<a href="?estante=4">Favoritos</a>
-
-<?php if (empty($obras)) : ?>
-
-    <p>Nenhuma obra cadastrada.</p>
-
-<?php else : ?>
-
-    <?php foreach ($obras as $obra) : ?>
-
-        <div style="margin-bottom:20px">
-
-            <h3>
-                <?= htmlspecialchars($obra['titulo']) ?>
-            </h3>
-
-            <p>
-                Autor:
-                <?= htmlspecialchars($obra['autor']) ?>
-            </p>
-
-            <p>
-                Plataforma:
-                <?= htmlspecialchars($obra['plataforma']) ?>
-            </p>
-
-            <?php if (!empty($obra['link_url'])) : ?>
-
-                <a
-                    href="<?= htmlspecialchars($obra['link_url']) ?>"
-                    target="_blank"
-                >
-                    Acessar Obra
-                </a>
-
-            <?php endif; ?>
-            <p>
-                <a href="/mover_obra.php?id=<?= $obra['id'] ?>">
-                    Mover/Copiar
-                </a>
-            </p>
-            <p>
-                <a href="/editar_obra.php?id=<?= $obra['id'] ?>">
-                    Editar
-                </a>
-                <a
-                    href="/actions/excluir_obra.php?id=<?= $obra['id'] ?>"
-                    onclick="return confirm('Deseja excluir esta obra?')">
-                    Excluir
-                </a>
-            </p>
-
-        </div>
-
-        <hr>
-
-    <?php endforeach; ?>
-
-<?php endif; ?>
-
-</body>
-</html>
+<!--
+  JANELA REMOVER (RF18)
+  Envia por POST para /actions/excluir_obra.php. O campo estante_id
+  vai junto para o back-end poder remover só da estante aberta.
+-->
+<dialog id="dlg-remover" class="dlg" aria-labelledby="dlg-remover-t">
+  <form method="post" action="/actions/excluir_obra.php">
+    <h2 id="dlg-remover-t">Remover</h2>
+    <input type="hidden" name="id" id="rm-id" value="">
+    <input type="hidden" name="estante_id" value="<?= $estanteAtual ?>">
+    <p>Deseja remover essa história da sua prateleira?</p>
+    <p class="mudo pequeno" id="rm-titulo"></p>
+    <div class="acoes"><button class="btn" type="submit">Sim</button><button class="btn btn-borda" type="button" data-fechar autofocus>Não</button></div>
+  </form>
+</dialog>
+<?php rodape(); ?>

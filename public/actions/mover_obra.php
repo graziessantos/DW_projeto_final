@@ -1,65 +1,51 @@
 <?php
 
-session_start();
+declare(strict_types=1);
 
-require_once '../../config/database.php';
+require_once dirname(__DIR__, 2) . '/src/sessao.php';
+require_once dirname(__DIR__, 2) . '/config/database.php';
 
-$pdo = conectarBanco();
+exigirPost();
+$usuarioId = exigirLoginNaAcao();
 
-$obraId = (int)($_POST['obra_id'] ?? 0);
-$estanteId = (int)($_POST['estante_id'] ?? 0);
-$acao = $_POST['acao'] ?? '';
+$obraId = (int) ($_POST['obra_id'] ?? 0);
+$estanteId = lerIdsEstantes($_POST['estante_id'] ?? [])[0] ?? 0;
+$acao = (string) ($_POST['acao'] ?? '');
 
-if ($obraId <= 0 || $estanteId <= 0) {
-
-    header('Location: /perfil.php');
-    exit;
+if ($obraId <= 0 || $estanteId <= 0 || !in_array($acao, ['mover', 'copiar'], true)) {
+    redirecionar('/perfil.php');
 }
 
-$verificar = $pdo->prepare("
-    SELECT 1
-    FROM obras_estantes
-    WHERE
-        obra_id = :obra_id
-        AND estante_id = :estante_id
-");
+try {
+    $pdo = conectarBanco();
 
-$verificar->execute([
-    'obra_id' => $obraId,
-    'estante_id' => $estanteId
-]);
+    $dono = $pdo->prepare('SELECT 1 FROM obras WHERE id = :id AND usuario_id = :u');
+    $dono->execute(['id' => $obraId, 'u' => $usuarioId]);
 
-if (!$verificar->fetch()) {
+    if (!$dono->fetch()) {
+        redirecionar('/perfil.php');
+    }
 
-    $inserir = $pdo->prepare("
-        INSERT INTO obras_estantes (
-            obra_id,
-            estante_id
-        )
-        VALUES (
-            :obra_id,
-            :estante_id
-        )
-    ");
+    $pdo->beginTransaction();
 
-    $inserir->execute([
-        'obra_id' => $obraId,
-        'estante_id' => $estanteId
-    ]);
+    $pdo->prepare(
+        'INSERT INTO obras_estantes (obra_id, estante_id)
+         VALUES (:o, :e) ON CONFLICT DO NOTHING'
+    )->execute(['o' => $obraId, 'e' => $estanteId]);
+
+    if ($acao === 'mover') {
+        $pdo->prepare(
+            'DELETE FROM obras_estantes WHERE obra_id = :o AND estante_id <> :e'
+        )->execute(['o' => $obraId, 'e' => $estanteId]);
+    }
+
+    $pdo->commit();
+} catch (Throwable $erro) {
+    if (isset($pdo) && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+
+    error_log($erro->getMessage());
 }
-if ($acao === 'mover') {
 
-    $excluir = $pdo->prepare("
-        DELETE FROM obras_estantes
-        WHERE
-            obra_id = :obra_id
-            AND estante_id <> :estante_id
-    ");
-
-    $excluir->execute([
-        'obra_id' => $obraId,
-        'estante_id' => $estanteId
-    ]);
-}
-header('Location: /perfil.php');
-exit;
+redirecionar('/perfil.php?estante=' . $estanteId);

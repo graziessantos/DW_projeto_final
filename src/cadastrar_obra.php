@@ -2,214 +2,146 @@
 
 declare(strict_types=1);
 
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
-
+require_once __DIR__ . '/sessao.php';
 require_once dirname(__DIR__) . '/config/database.php';
 
-function redirecionarAdicionar(
-    string $tipo,
-    string $mensagem
-): never {
-
-    $_SESSION['mensagem_obra'] = [
-        'tipo' => $tipo,
-        'texto' => $mensagem
-    ];
-
-    header('Location: /adicionar.php');
-    exit;
+function redirecionarAdicionar(string $tipo, string $mensagem): never
+{
+    guardarMensagem('mensagem_obra', $tipo, $mensagem);
+    redirecionar('/adicionar.php');
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+/**
+ * Cadastra uma obra (manual ou da Open Library) em uma ou mais estantes (RF08-RF10).
+ */
+function cadastrarObra(): void
+{
+    exigirPost();
+    $usuarioId = exigirLoginNaAcao();
 
-    http_response_code(405);
+    $titulo = trim((string) ($_POST['titulo'] ?? ''));
+    $autor = trim((string) ($_POST['autor'] ?? ''));
+    $plataforma = trim((string) ($_POST['plataforma'] ?? ''));
+    $linkUrl = trim((string) ($_POST['link_url'] ?? ''));
+    $origem = ($_POST['origem'] ?? 'manual') === 'open_library' ? 'open_library' : 'manual';
+    $chaveOL = trim((string) ($_POST['open_library_key'] ?? ''));
+    $estantes = lerIdsEstantes($_POST['estantes'] ?? ($_POST['estante_id'] ?? []));
+    $lidos = lerCapitulos($_POST['capitulos_lidos'] ?? '');
+    $total = lerCapitulos($_POST['total_capitulos'] ?? '');
 
-    header('Allow: POST');
-
-    exit('Método não permitido.');
-}
-
-$titulo = trim(
-    (string) ($_POST['titulo'] ?? '')
-);
-
-$autor = trim(
-    (string) ($_POST['autor'] ?? '')
-);
-
-$plataforma = trim(
-    (string) ($_POST['plataforma'] ?? '')
-);
-
-$linkUrl = trim(
-    (string) ($_POST['link_url'] ?? '')
-);
-
-$estanteId = (int)(
-    $_POST['estante_id'] ?? 0
-);
-
-$usuarioId = (int)(
-    $_SESSION['usuario_id'] ?? 0
-);
-$capitulosLidos = (int) (
-        $_POST['capitulos_lidos']
-        ?? 0
-    );
-
-$totalCapitulos = (int) (
-        $_POST['total_capitulos']
-        ?? 0
-    );
-
-if (
-    $titulo === '' ||
-    $autor === '' ||
-    $plataforma === ''
-) {
-
-    redirecionarAdicionar(
-        'erro',
-        'Preencha todos os campos obrigatórios.'
-    );
-}
-
-if (
-    $linkUrl !== '' &&
-    filter_var($linkUrl, FILTER_VALIDATE_URL) === false
-) {
-
-    redirecionarAdicionar(
-        'erro',
-        'Informe uma URL válida.'
-    );
-}
-
-if ($estanteId <= 0) {
-
-    redirecionarAdicionar(
-        'erro',
-        'Selecione uma estante.'
-    );
-}
-
-try {
-
-    $pdo = conectarBanco();
-
-    $verificar = $pdo->prepare(
-        '
-        SELECT id
-        FROM obras
-        WHERE
-            usuario_id = :usuario_id
-            AND lower(titulo) = lower(:titulo)
-            AND lower(autor) = lower(:autor)
-            AND lower(plataforma) = lower(:plataforma)
-        LIMIT 1
-        '
-    );
-
-    $verificar->execute([
-        'usuario_id' => $usuarioId,
-        'titulo' => $titulo,
-        'autor' => $autor,
-        'plataforma' => $plataforma
-    ]);
-
-    if ($verificar->fetch()) {
-
-        redirecionarAdicionar(
-            'erro',
-            'Essa obra já foi cadastrada.'
-        );
-    }
-
-    $pdo->beginTransaction();
-
-    $inserirObra = $pdo->prepare(
-        '
-        INSERT INTO obras (
-            usuario_id,
-            titulo,
-            autor,
-            plataforma,
-            capitulos_lidos,
-            total_capitulos,
-            link_url
-        )
-        VALUES (
-            :usuario_id,
-            :titulo,
-            :autor,
-            :plataforma,
-            :capitulos_lidos,
-            :total_capitulos,
-            :link_url
-        )
-        RETURNING id
-        '
-    );
-
-    $inserirObra->execute([
-        'usuario_id' => $usuarioId,
+    // Guarda o que foi digitado para a tela repreencher se houver erro
+    $_SESSION['dados_obra'] = [
         'titulo' => $titulo,
         'autor' => $autor,
         'plataforma' => $plataforma,
-        'capitulos_lidos' => $capitulosLidos,
-        'total_capitulos' => $totalCapitulos,
-        'link_url' =>
-            $linkUrl !== ''
-            ? $linkUrl
-            : null
-    ]);
-
-    $obraId = $inserirObra->fetchColumn();
-
-    $inserirEstante = $pdo->prepare(
-        '
-        INSERT INTO obras_estantes (
-            obra_id,
-            estante_id
-        )
-        VALUES (
-            :obra_id,
-            :estante_id
-        )
-        '
-    );
-
-    $inserirEstante->execute([
-        'obra_id' => $obraId,
-        'estante_id' => $estanteId
-    ]);
-
-    $pdo->commit();
-
-    $_SESSION['mensagem_obra'] = [
-        'tipo' => 'sucesso',
-        'texto' => 'Obra cadastrada com sucesso.'
+        'link_url' => $linkUrl,
     ];
 
-    header('Location: /perfil.php');
-
-    exit;
-
-} catch (Throwable $erro) {
-
-    if (
-        isset($pdo)
-        && $pdo->inTransaction()
-    ) {
-        $pdo->rollBack();
+    if ($origem === 'open_library') {
+        $plataforma = 'Open Library';
+    } else {
+        $chaveOL = '';
     }
 
-    error_log($erro->getMessage());
+    if ($titulo === '' || $autor === '' || $plataforma === '') {
+        redirecionarAdicionar('erro', 'Preencha todos os campos obrigatórios.');
+    }
 
-    redirecionarAdicionar(
-        'erro',
-        'Erro ao cadastrar a obra.'
-    );
+    if (
+        mb_strlen($titulo) > 255 || mb_strlen($autor) > 255
+        || mb_strlen($plataforma) > 100 || mb_strlen($linkUrl) > 2048
+    ) {
+        redirecionarAdicionar('erro', 'Algum campo ultrapassou o tamanho permitido.');
+    }
+
+    if ($linkUrl !== '' && !preg_match('#^https?://#i', $linkUrl)) {
+        redirecionarAdicionar('erro', 'Informe uma URL válida, começando com http:// ou https://.');
+    }
+
+    if ($linkUrl !== '' && filter_var($linkUrl, FILTER_VALIDATE_URL) === false) {
+        redirecionarAdicionar('erro', 'Informe uma URL válida.');
+    }
+
+    if ($estantes === []) {
+        redirecionarAdicionar('erro', 'Selecione pelo menos uma estante.');
+    }
+
+    if ($lidos === false || $total === false || ($total !== null && $total <= 0)) {
+        redirecionarAdicionar('erro', 'Informe números válidos de capítulos.');
+    }
+
+    if ($total !== null && ($lidos ?? 0) > $total) {
+        redirecionarAdicionar('erro', 'Os capítulos lidos não podem passar do total.');
+    }
+
+    if ($lidos !== null && $total === null && $lidos < 0) {
+        redirecionarAdicionar('erro', 'Informe números válidos de capítulos.');
+    }
+
+    try {
+        $pdo = conectarBanco();
+
+        $verificar = $pdo->prepare(
+            'SELECT 1 FROM obras
+             WHERE usuario_id = :u
+               AND lower(btrim(titulo)) = lower(btrim(:t))
+               AND lower(btrim(autor)) = lower(btrim(:a))
+               AND lower(btrim(plataforma)) = lower(btrim(:p))
+             LIMIT 1'
+        );
+        $verificar->execute(['u' => $usuarioId, 't' => $titulo, 'a' => $autor, 'p' => $plataforma]);
+
+        if ($verificar->fetch()) {
+            redirecionarAdicionar('erro', 'Essa obra já foi cadastrada.');
+        }
+
+        $pdo->beginTransaction();
+
+        $inserir = $pdo->prepare(
+            'INSERT INTO obras
+                (usuario_id, titulo, autor, plataforma, capitulos_lidos,
+                 total_capitulos, link_url, origem, open_library_key)
+             VALUES
+                (:u, :t, :a, :p, :cl, :tc, :l, :o, :k)
+             RETURNING id'
+        );
+        $inserir->bindValue(':u', $usuarioId, PDO::PARAM_INT);
+        $inserir->bindValue(':t', $titulo);
+        $inserir->bindValue(':a', $autor);
+        $inserir->bindValue(':p', $plataforma);
+        $inserir->bindValue(':cl', $lidos ?? 0, PDO::PARAM_INT);
+        $inserir->bindValue(':tc', $total, $total === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+        $inserir->bindValue(':l', $linkUrl !== '' ? $linkUrl : null, $linkUrl !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
+        $inserir->bindValue(':o', $origem);
+        $inserir->bindValue(':k', $chaveOL !== '' ? $chaveOL : null, $chaveOL !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
+        $inserir->execute();
+
+        $obraId = (int) $inserir->fetchColumn();
+
+        $vincular = $pdo->prepare(
+            'INSERT INTO obras_estantes (obra_id, estante_id) VALUES (:o, :e)'
+        );
+
+        foreach ($estantes as $estanteId) {
+            $vincular->execute(['o' => $obraId, 'e' => $estanteId]);
+        }
+
+        $pdo->commit();
+
+        unset($_SESSION['dados_obra']);
+        guardarMensagem('mensagem_obra', 'sucesso', 'Obra cadastrada com sucesso.');
+        redirecionar('/perfil.php?estante=' . $estantes[0]);
+    } catch (Throwable $erro) {
+        if (isset($pdo) && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+
+        error_log($erro->getMessage());
+
+        if ($erro instanceof PDOException && $erro->getCode() === '23505') {
+            redirecionarAdicionar('erro', 'Essa obra já foi cadastrada.');
+        }
+
+        redirecionarAdicionar('erro', 'Erro ao cadastrar a obra.');
+    }
 }
