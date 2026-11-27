@@ -5,9 +5,7 @@ declare(strict_types=1);
 function carregarEnv(string $caminho): void
 {
     if (!is_file($caminho) || !is_readable($caminho)) {
-        throw new RuntimeException(
-            'Arquivo .env não encontrado.'
-        );
+        return; // no Render, as variáveis vêm do painel
     }
 
     $linhas = file(
