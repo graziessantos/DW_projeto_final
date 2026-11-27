@@ -29,7 +29,6 @@ if ($tituloBusca !== '') {
         ]);
         $resposta = curl_exec($curl);
         $falhou = $resposta === false || curl_error($curl) !== '';
-        curl_close($curl);
 
         if ($falhou) {
             $avisoBusca = 'Não foi possível consultar a Open Library agora. Você pode cadastrar a obra manualmente ao lado.';
