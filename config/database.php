@@ -53,11 +53,27 @@ function conectarBanco(): PDO
         );
     }
 
+    /*
+     * O banco do grupo exige SSL ("require"). Para testar em um PostgreSQL
+     * instalado no próprio computador (que normalmente não tem SSL), coloque
+     * DATABASE_SSLMODE=disable no .env.
+     */
+    $sslmode = (string) getenv('DATABASE_SSLMODE');
+
+    if (!in_array(
+        $sslmode,
+        ['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'],
+        true
+    )) {
+        $sslmode = 'require';
+    }
+
     $dsn = sprintf(
-        'pgsql:host=%s;port=%d;dbname=%s;sslmode=require',
+        'pgsql:host=%s;port=%d;dbname=%s;sslmode=%s',
         $host,
         $port,
-        $nomeBanco
+        $nomeBanco,
+        $sslmode
     );
 
     try {
