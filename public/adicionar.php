@@ -1,192 +1,125 @@
 <?php
 
 require_once '../config/session.php';
+require_once __DIR__ . '/partials/layout.php';
 
-?>
+$mensagem = pegarMensagem('mensagem_obra');
+$dadosManual = $_SESSION['dados_obra'] ?? [];
+unset($_SESSION['dados_obra']);
 
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <title>Adicionar Obra</title>
-</head>
-<body>
+/* ---- Busca na Open Library (botão "Buscar livro") ---- */
+$tituloBusca = trim((string) ($_GET['titulo_busca'] ?? ''));
+$achada = null;
+$avisoBusca = '';
 
-<hr>
+if ($tituloBusca !== '') {
+    if (mb_strlen($tituloBusca) < 3) {
+        $avisoBusca = 'Digite pelo menos 3 caracteres.';
+    } else {
+        $url = 'https://openlibrary.org/search.json?limit=1&fields=key,title,author_name&title='
+            . urlencode($tituloBusca);
 
-<h2>Buscar Obra na Open Library</h2>
+        $curl = curl_init();
+        curl_setopt_array($curl, [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => false,
+        ]);
+        $resposta = curl_exec($curl);
+        $falhou = $resposta === false || curl_error($curl) !== '';
+        curl_close($curl);
 
-<form action="buscar_obra.php" method="GET">
-
-    <label>Título da Obra</label>
-
-    <input
-        type="text"
-        name="titulo_busca"
-        required
-    >
-
-    <button type="submit">
-        Buscar na Nuvem
-    </button>
-
-</form>
-
-<hr>
-
-<h1>Adicionar Obra</h1>
-
-<form action="actions/cadastrar_obra.php" method="POST">
-
-    <label>Título</label>
-    <input type="text" name="titulo" required>
-
-    <br><br>
-
-    <label>Autor</label>
-    <input type="text" name="autor" required>
-
-    <br><br>
-
-    <label>Plataforma</label>
-    <input type="text" name="plataforma" required>
-
-    <br><br>
-
-    <label>Link</label>
-    <input type="url" name="link_url">
-
-    <br><br>
-
-    <label>Estante</label>
-
-    <select name="estante_id" required>
-        <option value="">Selecione</option>
-        <option value="1">Lendo</option>
-        <option value="2">Lido</option>
-        <option value="3">Quero Ler</option>
-        <option value="4">Favoritos</option>
-    </select>
-
-    <br><br>
-
-    <label>Capítulos Lidos</label>
-
-        <input
-            type="number"
-            name="capitulos_lidos"
-            id="capitulos_lidos"
-            min="0"
-        >
-
-        <br><br>
-
-        <label>Total de Capítulos</label>
-
-        <input
-            type="number"
-            name="total_capitulos"
-            id="total_capitulos"
-            min="1"
-        >
-
-        <br><br>
-
-        <label>Progresso</label>
-
-        <div
-            style="
-                width:300px;
-                border:1px solid #000;
-                height:20px;
-            "
-        >
-            <div
-                id="barraProgresso"
-                style="
-                    height:100%;
-                    width:0%;
-                    background:green;
-                "
-            ></div>
-        </div>
-
-        <p id="textoProgresso">
-            0%
-        </p>
-
-    <button type="submit">
-        Salvar
-    </button>
-
-</form>
-
-<script>
-
-const capitulosLidos =
-    document.getElementById(
-        'capitulos_lidos'
-    );
-
-const totalCapitulos =
-    document.getElementById(
-        'total_capitulos'
-    );
-
-function atualizarProgresso()
-{
-    const lidos =
-        parseInt(
-            capitulosLidos.value
-        ) || 0;
-
-    const total =
-        parseInt(
-            totalCapitulos.value
-        ) || 0;
-
-    if (total <= 0) {
-        return;
-    }
-
-    const percentual =
-        Math.round(
-            (lidos / total) * 100
-        );
-
-    document
-        .getElementById(
-            'barraProgresso'
-        )
-        .style.width =
-        percentual + '%';
-
-    document
-        .getElementById(
-            'textoProgresso'
-        )
-        .innerText =
-        percentual + '%';
-
-    if (percentual >= 100) {
-
-        alert(
-            'Leitura concluída! Considere mover a obra para Lido.'
-        );
+        if ($falhou) {
+            $avisoBusca = 'Não foi possível consultar a Open Library agora. Você pode cadastrar a obra manualmente ao lado.';
+        } else {
+            $dados = json_decode((string) $resposta, true);
+            $doc = $dados['docs'][0] ?? null;
+            if (!$doc || empty($doc['title'])) {
+                $avisoBusca = 'Nenhuma obra encontrada. Tente outro título ou cadastre manualmente.';
+            } else {
+                $achada = [
+                    'titulo' => (string) $doc['title'],
+                    'autor' => (string) ($doc['author_name'][0] ?? 'Autor desconhecido'),
+                    'chave' => (string) ($doc['key'] ?? ''),
+                ];
+            }
+        }
     }
 }
 
-capitulosLidos.addEventListener(
-    'input',
-    atualizarProgresso
-);
+topo('Adicionar obras', 'adicionar');
+?>
+<div class="coluna larga">
+  <div>
+    <h1>Adicionar Obras</h1>
+    <p class="mudo">Cadastre uma fanfic à mão ou busque um livro. Campos com * são obrigatórios.</p>
+  </div>
+  <?php exibirMensagem($mensagem); ?>
 
-totalCapitulos.addEventListener(
-    'input',
-    atualizarProgresso
-);
+  <div class="duas">
+    <form class="cartao-form borda" action="/actions/cadastrar_obra.php" method="post" id="form-manual">
+      <h2>Inserção Manual</h2>
+      <input type="hidden" name="origem" value="manual">
+      <div class="campo">
+        <label for="titulo">Nome da história *</label>
+        <input id="titulo" name="titulo" type="text" required maxlength="255" value="<?= e($dadosManual['titulo'] ?? '') ?>">
+      </div>
+      <div class="campo">
+        <label for="autor">Autor(a) *</label>
+        <input id="autor" name="autor" type="text" required maxlength="255" value="<?= e($dadosManual['autor'] ?? '') ?>">
+      </div>
+      <div class="campo">
+        <label for="plataforma">Plataforma *</label>
+        <input id="plataforma" name="plataforma" type="text" required maxlength="100" placeholder="Ao3, Wattpad, Spirit..." value="<?= e($dadosManual['plataforma'] ?? '') ?>">
+      </div>
+      <div class="campo">
+        <label for="link_url">Link (URL) *</label>
+        <input id="link_url" name="link_url" type="url" required placeholder="https://" value="<?= e($dadosManual['link_url'] ?? '') ?>">
+      </div>
+      <?php caixasEstantes('m', array_map('intval', $dadosManual['estantes'] ?? [])); ?>
+      <div class="centro"><button class="btn" type="submit">Salvar</button></div>
+    </form>
 
-</script>
+    <div class="coluna-direita">
+      <form class="cartao-form borda" action="/adicionar.php" method="get" id="form-busca">
+        <h2>Busca de Livros</h2>
+        <div class="campo">
+          <label for="titulo_busca">Título da Obra</label>
+          <input id="titulo_busca" name="titulo_busca" type="search" required minlength="3" value="<?= e($tituloBusca) ?>">
+        </div>
+        <button class="btn cheio" type="submit">Buscar livro</button>
+        <p class="dica">Dados fornecidos pela Open Library.</p>
+        <?php if ($avisoBusca !== '') : ?>
+          <p class="erro bloco" role="alert"><?= e($avisoBusca) ?></p>
+        <?php endif; ?>
 
-</body>
-</html>
+        <?php if ($achada) : ?>
+          <div class="selecionada" role="status">
+            <p class="destaque"><strong>Obra encontrada!</strong></p>
+            <p><strong><?= e($achada['titulo']) ?></strong><br><span class="mudo"><?= e($achada['autor']) ?></span></p>
+          </div>
+        <?php endif; ?>
+      </form>
+
+      <?php if ($achada) : ?>
+        <form class="cartao-form borda" action="/actions/cadastrar_obra.php" method="post" id="form-achada">
+          <input type="hidden" name="origem" value="open_library">
+          <input type="hidden" name="titulo" value="<?= e($achada['titulo']) ?>">
+          <input type="hidden" name="autor" value="<?= e($achada['autor']) ?>">
+          <input type="hidden" name="plataforma" value="Open Library">
+          <input type="hidden" name="open_library_key" value="<?= e($achada['chave']) ?>">
+          <?php if ($achada['chave'] !== '') : ?>
+            <input type="hidden" name="link_url" value="<?= e('https://openlibrary.org' . $achada['chave']) ?>">
+          <?php endif; ?>
+          <?php caixasEstantes('b'); ?>
+          <div class="centro"><button class="btn" type="submit">Salvar</button></div>
+        </form>
+      <?php endif; ?>
+    </div>
+  </div>
+
+  <img class="arte-direita" src="/assets/img/cadeira.png" width="260" height="212" alt="Ilustração de uma pessoa sentada em uma cadeira, lendo, ao lado de uma pilha de livros.">
+</div>
+<?php rodape(); ?>
