@@ -3,6 +3,14 @@
 Organizador de leituras (fanfics e livros) — Desenvolvimento Web, CEUB.
 PHP 8 (PDO) + PostgreSQL + HTML/CSS/JS.
 
+## Autores
+
+Projeto desenvolvido em grupo para a disciplina de Desenvolvimento Web do CEUB:
+- Ana Júlia
+- Grazielle Santana
+- Lara Abreu
+- Beatriz Dezotti
+
 ## Como rodar
 
 1. Instale PHP 8 com as extensões `pdo_pgsql` e `curl`.
