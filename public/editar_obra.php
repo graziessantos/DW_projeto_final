@@ -31,184 +31,45 @@ if (!$obra) {
     header('Location: /perfil.php');
     exit;
 }
+
+/* ---- Apenas apresentação ---- */
+require_once __DIR__ . '/partials/layout.php';
+
+$mensagem = pegarMensagem('mensagem_obra');
+$daOpenLibrary = ($obra['origem'] ?? 'manual') === 'open_library';
+
 ?>
-
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <title>Editar Obra</title>
-</head>
-<body>
-
-<h1>Editar Obra</h1>
-
-<form action="/actions/editar_obra.php" method="POST">
-
-    <input
-        type="hidden"
-        name="id"
-        value="<?= $obra['id'] ?>"
-    >
-
-    <label>Título</label>
-    <input
-        type="text"
-        name="titulo"
-        value="<?= htmlspecialchars($obra['titulo']) ?>"
-        required
-    >
-
-    <br><br>
-
-    <label>Autor</label>
-    <input
-        type="text"
-        name="autor"
-        value="<?= htmlspecialchars($obra['autor']) ?>"
-        required
-    >
-
-    <br><br>
-
-    <label>Plataforma</label>
-    <input
-        type="text"
-        name="plataforma"
-        value="<?= htmlspecialchars($obra['plataforma']) ?>"
-        required
-    >
-
-    <br><br>
-    <label>Capítulos Lidos</label>
-
-    <input
-        type="number"
-        id="capitulos_lidos"
-        name="capitulos_lidos"
-        value="<?= $obra['capitulos_lidos'] ?>"
-    >
-
-    <br><br>
-
-    <label>Total de Capítulos</label>
-
-    <input
-        type="number"
-        id="total_capitulos"
-        name="total_capitulos"
-        value="<?= $obra['total_capitulos'] ?>"
-    >
-    <br><br>
-
-    <label>Progresso</label>
-
-    <div
-        style="
-            width:300px;
-            border:1px solid #000;
-            height:20px;
-        "
-    >
-
-        <div
-            id="barraProgresso"
-            style="
-                height:100%;
-                width:0%;
-                background:green;
-            "
-        ></div>
-
+<?php
+topo('Editar obra', 'perfil');
+?>
+<div class="coluna">
+  <h1>Editar obra</h1>
+  <?php exibirMensagem($mensagem); ?>
+  <form class="cartao-form borda" action="/actions/editar_obra.php" method="post">
+    <input type="hidden" name="id" value="<?= (int) $obra['id'] ?>">
+    <div class="campo">
+      <label for="titulo">Nome da história *</label>
+      <input id="titulo" name="titulo" type="text" required maxlength="255" value="<?= e($obra['titulo']) ?>">
     </div>
-
-    <p id="textoProgresso">
-        0%
-    </p>
-
-    <br><br>
-
-    <label>Link</label>
-    <input
-        type="url"
-        name="link_url"
-        value="<?= htmlspecialchars($obra['link_url']) ?>"
-    >
-
-    <br><br>
-
-    <button type="submit">
-        Salvar Alterações
-    </button>
-
-</form>
-<script>
-
-const capitulosLidos =
-    document.getElementById(
-        'capitulos_lidos'
-    );
-
-const totalCapitulos =
-    document.getElementById(
-        'total_capitulos'
-    );
-
-function atualizarProgresso()
-{
-    const lidos =
-        parseInt(
-            capitulosLidos.value
-        ) || 0;
-
-    const total =
-        parseInt(
-            totalCapitulos.value
-        ) || 0;
-
-    if (total <= 0) {
-        return;
-    }
-
-    const percentual =
-        Math.round(
-            (lidos / total) * 100
-        );
-
-    document
-        .getElementById(
-            'barraProgresso'
-        )
-        .style.width =
-        percentual + '%';
-
-    document
-        .getElementById(
-            'textoProgresso'
-        )
-        .innerText =
-        percentual + '%';
-
-    if (percentual >= 100) {
-
-        alert(
-            'Leitura concluída! Considere mover a obra para Lido.'
-        );
-    }
-}
-
-atualizarProgresso();
-
-capitulosLidos.addEventListener(
-    'input',
-    atualizarProgresso
-);
-
-totalCapitulos.addEventListener(
-    'input',
-    atualizarProgresso
-);
-
-</script>
-</body>
-</html>
+    <div class="campo">
+      <label for="autor">Autor(a) *</label>
+      <input id="autor" name="autor" type="text" required maxlength="255" value="<?= e($obra['autor']) ?>">
+    </div>
+    <div class="campo">
+      <label for="plataforma">Plataforma *</label>
+      <input id="plataforma" name="plataforma" type="text" required maxlength="100" value="<?= e($obra['plataforma']) ?>"<?= $daOpenLibrary ? ' readonly aria-describedby="plat-d"' : '' ?>>
+      <?php if ($daOpenLibrary) : ?>
+        <span class="dica" id="plat-d">Obras vindas da Open Library mantêm essa plataforma.</span>
+      <?php endif; ?>
+    </div>
+    <div class="campo">
+      <label for="link_url">Link (URL)</label>
+      <input id="link_url" name="link_url" type="url" placeholder="https://" value="<?= e($obra['link_url'] ?? '') ?>">
+    </div>
+    <div class="acoes">
+      <button class="btn" type="submit">Salvar alterações</button>
+      <a class="btn btn-borda" href="/perfil.php">Cancelar</a>
+    </div>
+  </form>
+</div>
+<?php rodape(); ?>

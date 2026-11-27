@@ -1,60 +1,59 @@
 <?php
 
-require_once __DIR__ . '/../config/database.php';
+declare(strict_types=1);
 
-function realizarLogin()
+require_once __DIR__ . '/sessao.php';
+require_once dirname(__DIR__) . '/config/database.php';
+
+function realizarLogin(): void
 {
-    $pdo = conectarBanco();
+    exigirPost();
+    iniciarSessao();
 
-    $login = trim($_POST['login']);
-    $senha = $_POST['senha'];
+    $login = trim((string) ($_POST['login'] ?? ''));
+    $senha = (string) ($_POST['senha'] ?? '');
+    $lembrar = ($_POST['lembrar'] ?? '') === '1';
 
-    $sql = "
-        SELECT *
-        FROM usuarios
-        WHERE
-            LOWER(email) = LOWER(:login)
-            OR
-            LOWER(nome_usuario) = LOWER(:login)
-        LIMIT 1
-    ";
+    try {
+        $pdo = conectarBanco();
 
-    $stmt = $pdo->prepare($sql);
-
-    $stmt->execute([
-        'login' => $login
-    ]);
-
-    $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if (
-        !$usuario ||
-        !password_verify(
-            $senha,
-            $usuario['senha_hash']
-        )
-    ) {
-
-        header(
-            'Location: ../public/login.php?erro=1'
+        $stmt = $pdo->prepare(
+            'SELECT id, nome_exibicao, nome_usuario, senha_hash, ativo
+             FROM usuarios
+             WHERE lower(email) = lower(:login)
+                OR lower(nome_usuario) = lower(:login)
+             LIMIT 1'
         );
-        exit;
+        $stmt->execute(['login' => $login]);
+        $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (Throwable $erro) {
+        error_log($erro->getMessage());
+        guardarMensagem('mensagem_login', 'erro', 'Não foi possível entrar agora. Tente novamente.');
+        redirecionar('/login.php');
     }
 
-    session_start();
+    if (
+        $login === ''
+        || !$usuario
+        || !$usuario['ativo']
+        || !password_verify($senha, $usuario['senha_hash'])
+    ) {
+        redirecionar('/login.php?erro=1');
+    }
 
-    $_SESSION['usuario_id'] =
-        $usuario['id'];
+    session_regenerate_id(true);
 
-    $_SESSION['nome_exibicao'] =
-        $usuario['nome_exibicao'];
+    $_SESSION['usuario_id'] = (int) $usuario['id'];
+    $_SESSION['nome_exibicao'] = $usuario['nome_exibicao'];
+    $_SESSION['nome_usuario'] = $usuario['nome_usuario'];
 
-    $_SESSION['nome_usuario'] =
-        $usuario['nome_usuario'];
+    if ($lembrar) {
+        try {
+            criarLoginLembrado($pdo, (int) $usuario['id']);
+        } catch (Throwable $erro) {
+            error_log($erro->getMessage());
+        }
+    }
 
-    header(
-        'Location: ../perfil.php'
-    );
-
-    exit;
+    redirecionar('/perfil.php');
 }
